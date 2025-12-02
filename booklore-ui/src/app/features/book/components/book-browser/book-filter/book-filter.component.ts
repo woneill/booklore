@@ -164,6 +164,27 @@ export class BookFilterComponent implements OnInit, OnDestroy {
   @Input() entityType$!: Observable<EntityType> | undefined;
   @Input() resetFilter$!: Subject<void>;
   @Input() showFilter: boolean = false;
+  @Input() set selectedFilterMode(mode: 'and' | 'or' | 'single') {
+    if (mode && mode !== this._selectedFilterMode) {
+      const previousMode = this._selectedFilterMode;
+      this._selectedFilterMode = mode;
+
+      // If switching to single mode and there are multiple filter values, clear them
+      if (mode === 'single' && previousMode !== 'single') {
+        const totalFilterCount = Object.values(this.activeFilters).reduce(
+          (sum, values) => sum + (Array.isArray(values) ? values.length : 0),
+          0
+        );
+
+        if (totalFilterCount > 1) {
+          this.clearActiveFilter();
+        }
+      }
+    }
+  }
+  get selectedFilterMode(): 'and' | 'or' | 'single' {
+    return this._selectedFilterMode;
+  }
 
   activeFilters: Record<string, any> = {};
   filterStreams: Record<string, Observable<Filter<any>[]>> = {};
@@ -174,7 +195,7 @@ export class BookFilterComponent implements OnInit, OnDestroy {
     {label: 'OR', value: 'or'},
     {label: '1', value: 'single'},
   ];
-  private _selectedFilterMode: 'and' | 'or' | 'single' = 'and';
+  protected _selectedFilterMode: 'and' | 'or' | 'single' = 'and';
   expandedPanels: number = 0;
   readonly filterLabels: Record<string, string> = {
     author: 'Author',
@@ -320,18 +341,6 @@ export class BookFilterComponent implements OnInit, OnDestroy {
         return items;
       }),
       shareReplay({bufferSize: 1, refCount: true})
-    );
-  }
-
-  get selectedFilterMode(): 'and' | 'or' | 'single' {
-    return this._selectedFilterMode;
-  }
-
-  set selectedFilterMode(mode: 'and' | 'or' | 'single') {
-    this._selectedFilterMode = mode;
-    this.filterModeChanged.emit(mode);
-    this.filterChangeSubject.next(
-      Object.keys(this.activeFilters).length ? {...this.activeFilters} : null
     );
   }
 

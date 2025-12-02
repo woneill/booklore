@@ -63,6 +63,7 @@ const QUERY_PARAMS = {
   SORT: 'sort',
   DIRECTION: 'direction',
   FILTER: 'filter',
+  FILTER_MODE: 'filterMode',
   SIDEBAR: 'sidebar',
   FROM: 'from',
 };
@@ -178,7 +179,8 @@ export class BookBrowserComponent implements OnInit, AfterViewInit {
   }
 
   get isFilterActive(): boolean {
-    return this.selectedFilter.value !== null;
+    const filters = this.selectedFilter.value;
+    return filters !== null && typeof filters === 'object' && Object.keys(filters).length > 0;
   }
 
   get computedFilterLabel(): string {
@@ -270,16 +272,23 @@ export class BookBrowserComponent implements OnInit, AfterViewInit {
       const sortParam = queryParamMap.get(QUERY_PARAMS.SORT);
       const directionParam = queryParamMap.get(QUERY_PARAMS.DIRECTION);
       const filterParams = queryParamMap.get(QUERY_PARAMS.FILTER);
+      const filterModeParam = queryParamMap.get(QUERY_PARAMS.FILTER_MODE);
 
       this.sidebarFilterTogglePrefService.showFilter$.subscribe(value => {
         this.showFilter = value;
       });
 
-      const parsedFilters: Record<string, string[]> = {};
-
       this.currentFilterLabel = 'All Books';
 
-      if (filterParams) {
+      const filterMode = (filterModeParam === 'or' || filterModeParam === 'single') ? filterModeParam : 'and';
+
+      this.selectedFilterMode.next(filterMode);
+
+      this.selectedFilter.next(null);
+      this.rawFilterParamFromUrl = null;
+      const parsedFilters: Record<string, string[]> = {};
+
+      if (filterParams && filterParams.trim().length > 0) {
         this.settingFiltersFromUrl = true;
 
         filterParams.split(',').forEach(pair => {
@@ -290,21 +299,17 @@ export class BookBrowserComponent implements OnInit, AfterViewInit {
           }
         });
 
-        this.selectedFilter.next(parsedFilters);
-        if (this.bookFilterComponent) {
-          this.bookFilterComponent.setFilters?.(parsedFilters);
-          this.bookFilterComponent.onFiltersChanged?.();
-        }
+        this.settingFiltersFromUrl = false;
 
         if (Object.keys(parsedFilters).length > 0) {
+          this.selectedFilter.next(parsedFilters);
+          if (this.bookFilterComponent) {
+            this.bookFilterComponent.setFilters?.(parsedFilters);
+            this.bookFilterComponent.onFiltersChanged?.();
+          }
           this.currentFilterLabel = this.computedFilterLabel;
+          this.rawFilterParamFromUrl = filterParams;
         }
-
-        this.rawFilterParamFromUrl = filterParams;
-        this.settingFiltersFromUrl = false;
-      } else {
-        this.clearFilter();
-        this.rawFilterParamFromUrl = null;
       }
 
       this.parsedFilters = parsedFilters;
@@ -366,7 +371,8 @@ export class BookBrowserComponent implements OnInit, AfterViewInit {
       const queryParams: any = {
         [QUERY_PARAMS.VIEW]: this.currentViewMode,
         [QUERY_PARAMS.SORT]: this.bookSorter.selectedSort.field,
-        [QUERY_PARAMS.DIRECTION]: this.bookSorter.selectedSort.direction === SortDirection.ASCENDING ? SORT_DIRECTION.ASCENDING : SORT_DIRECTION.DESCENDING
+        [QUERY_PARAMS.DIRECTION]: this.bookSorter.selectedSort.direction === SortDirection.ASCENDING ? SORT_DIRECTION.ASCENDING : SORT_DIRECTION.DESCENDING,
+        [QUERY_PARAMS.FILTER_MODE]: filterMode
       };
 
       if (Object.keys(parsedFilters).length > 0) {
@@ -405,11 +411,24 @@ export class BookBrowserComponent implements OnInit, AfterViewInit {
     const hasSidebarFilters = !!filters && Object.keys(filters).length > 0;
     this.currentFilterLabel = hasSidebarFilters ? this.computedFilterLabel : 'All Books';
 
-    const queryParam = hasSidebarFilters ? Object.entries(filters).map(([k, v]) => `${k}:${v.join('|')}`).join(',') : null;
-    if (queryParam !== this.activatedRoute.snapshot.queryParamMap.get(QUERY_PARAMS.FILTER)) {
+    const queryParams: any = {
+      [QUERY_PARAMS.FILTER_MODE]: this.selectedFilterMode.value
+    };
+
+    if (hasSidebarFilters) {
+      queryParams[QUERY_PARAMS.FILTER] = Object.entries(filters).map(([k, v]) => `${k}:${v.join('|')}`).join(',');
+    } else {
+      queryParams[QUERY_PARAMS.FILTER] = null;
+    }
+
+    const currentFilterParam = this.activatedRoute.snapshot.queryParamMap.get(QUERY_PARAMS.FILTER);
+    const currentFilterModeParam = this.activatedRoute.snapshot.queryParamMap.get(QUERY_PARAMS.FILTER_MODE);
+
+    if (queryParams[QUERY_PARAMS.FILTER] !== currentFilterParam ||
+      queryParams[QUERY_PARAMS.FILTER_MODE] !== currentFilterModeParam) {
       this.router.navigate([], {
         relativeTo: this.activatedRoute,
-        queryParams: {[QUERY_PARAMS.FILTER]: queryParam},
+        queryParams,
         queryParamsHandling: 'merge',
         replaceUrl: false
       });
@@ -418,6 +437,34 @@ export class BookBrowserComponent implements OnInit, AfterViewInit {
 
   onFilterModeChanged(mode: 'and' | 'or' | 'single'): void {
     this.selectedFilterMode.next(mode);
+
+    const currentFilters = this.selectedFilter.value;
+
+    const totalFilterCount = currentFilters
+      ? Object.values(currentFilters).reduce((sum, values) => sum + (Array.isArray(values) ? values.length : 0), 0)
+      : 0;
+
+    const queryParams: any = {
+      [QUERY_PARAMS.FILTER_MODE]: mode
+    };
+
+    if (mode === 'single' && totalFilterCount > 1) {
+      this.selectedFilter.next(null);
+      this.rawFilterParamFromUrl = null;
+      this.currentFilterLabel = 'All Books';
+      queryParams[QUERY_PARAMS.FILTER] = null;
+
+      if (this.bookFilterComponent) {
+        this.bookFilterComponent.clearActiveFilter();
+      }
+    }
+
+    this.router.navigate([], {
+      relativeTo: this.activatedRoute,
+      queryParams,
+      queryParamsHandling: 'merge',
+      replaceUrl: false
+    });
   }
 
   toggleSidebar(): void {

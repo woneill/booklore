@@ -50,11 +50,22 @@ export class SideBarFilter implements BookFilter {
   }
 
   filter(bookState: BookState): Observable<BookState> {
-    return combineLatest([this.selectedFilter$, this.selectedFilterMode$]).pipe(
-      map(([activeFilters, mode]) => {
-        if (!activeFilters) return bookState;
-        const filteredBooks = (bookState.books || []).filter(book => {
-          const matches = Object.entries(activeFilters).map(([filterType, filterValues]) => {
+    return combineLatest([
+      of(bookState),
+      this.selectedFilter$,
+      this.selectedFilterMode$
+    ]).pipe(
+      map(([state, filters, mode]) => {
+        if (!state.loaded || state.error) {
+          return state;
+        }
+
+        if (!filters || Object.keys(filters).length === 0) {
+          return state;
+        }
+
+        const filteredBooks = (state.books || []).filter(book => {
+          const matches = Object.entries(filters).map(([filterType, filterValues]) => {
             if (!Array.isArray(filterValues) || filterValues.length === 0) {
               return mode === 'or';
             }
@@ -117,7 +128,7 @@ export class SideBarFilter implements BookFilter {
           });
           return mode === 'and' ? matches.every(m => m) : matches.some(m => m);
         });
-        return {...bookState, books: filteredBooks};
+        return {...state, books: filteredBooks};
       })
     );
   }
