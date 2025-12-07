@@ -25,5 +25,6 @@ appVersion: "0.38.2"
 
 dependencies:
   - name: mariadb
+    condition: mariadb.enabled
     version: 22.0.*
     repository: oci://registry-1.docker.io/bitnamicharts
